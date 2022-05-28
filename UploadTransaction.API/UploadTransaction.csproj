@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>netcoreapp3.1</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="Domain\BusinessLogicLayer\NewFolder1\**" />
+    <Compile Remove="Domain\BusinessLogicLayer\NewFolder\**" />
+    <Content Remove="Domain\BusinessLogicLayer\NewFolder1\**" />
+    <Content Remove="Domain\BusinessLogicLayer\NewFolder\**" />
+    <EmbeddedResource Remove="Domain\BusinessLogicLayer\NewFolder1\**" />
+    <EmbeddedResource Remove="Domain\BusinessLogicLayer\NewFolder\**" />
+    <None Remove="Domain\BusinessLogicLayer\NewFolder1\**" />
+    <None Remove="Domain\BusinessLogicLayer\NewFolder\**" />
+  </ItemGroup>
+	
+  <ItemGroup>
+	<PackageReference Include="MySql.EntityFrameworkCore" Version="5.0.3.1" />
+	<PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
+	<PackageReference Include="Swashbuckle.AspNetCore" Version="6.3.0" />
+  </ItemGroup>
+	
+  <ItemGroup>
+    <Folder Include="Domain\DataInfrastructure\" />
+  </ItemGroup>
+
+</Project>
