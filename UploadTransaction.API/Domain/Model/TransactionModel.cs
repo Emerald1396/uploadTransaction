@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using CsvHelper.Configuration.Attributes;
 
 namespace UploadTransaction.Model
 {
@@ -38,12 +39,47 @@ namespace UploadTransaction.Model
 
     public class TransactionDetailModel
     {
-        public int SN { get; set; }
-        public string ID { get; set; }
+        [Name("Transaction Identificator")]
+        public string TransactionID { get; set; }
+        public string Amount { get; set; }
+        [Name("Currency Code")]
+        public string CurrencyCode { get; set; }
+        [Name("Transaction Date")]
+        public string TransactionDate { get; set; }
+        public string Status { get; set; }
+    }
+
+    public class SaveTransactionHistoryRequestModel
+    {
+        public List<TransactionDetailReviewModel> lstTransactionDetail { get; set; }
+    }
+
+    public class TransactionDetailReviewModel
+    {
         public string TransactionID { get; set; }
         public string Amount { get; set; }
         public string CurrencyCode { get; set; }
         public string TransactionDate { get; set; }
+        public string Status { get; set; }
+    }
+
+    public class GetTransacionlistByFilterRequestModel
+    {
+        public DateTime StartDate { get; set; }
+        public DateTime EndDate { get; set; }
+        public string Currency { get; set; }
+        public string Status { get; set; }
+    }
+
+    public class GetTransacionHistoryByFilterResponseModel
+    {
+        public List<TransacionHistoryModel> lstTransactionHistory { get; set; }
+    }
+
+    public class TransacionHistoryModel
+    {
+        public string id { get; set; }
+        public string payment { get; set; }
         public string Status { get; set; }
     }
 }

@@ -97,5 +97,37 @@ namespace UploadTransaction.Controllers
                 return await _txnUtility.TransactionApiResponse(ex);
             }
         }
+
+        [HttpPost]
+        [Route("SaveTransactionHistory")]
+        public async Task<IActionResult> SaveTransactionHistoryAsync([FromBody] SaveTransactionHistoryRequestModel requestModel)
+        {
+            try
+            {
+                var returnData = await _businessLayer.SaveTransactionHistoryAsync(requestModel);
+                return await _txnUtility.TransactionApiResponse(returnData.RespCode, returnData.RespDescription);
+
+            }
+            catch (Exception ex)
+            {
+                return await _txnUtility.TransactionApiResponse(ex);
+            }
+
+        }
+
+        [HttpPost]
+        [Route("GetTransactionListByFilter")]
+        public async Task<IActionResult> GetTransactionListByFilterAsync([FromBody] GetTransacionlistByFilterRequestModel requestModel)
+        {
+            try
+            {
+                var returnData = await _businessLayer.GetTransactionListByFilterAsync(requestModel);
+                return await _txnUtility.TransactionApiResponse(returnData);
+            }
+            catch (Exception ex)
+            {
+                return await _txnUtility.TransactionApiResponse(ex);
+            }
+        }
     } 
 }

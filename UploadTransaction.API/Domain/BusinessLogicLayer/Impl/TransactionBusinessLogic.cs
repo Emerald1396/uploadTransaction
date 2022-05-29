@@ -1,11 +1,16 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Xml;
 using System.Xml.Linq;
+using CsvHelper;
+using Microsoft.AspNetCore.Http;
+using Microsoft.EntityFrameworkCore;
+using UploadTransaction.Domain.DataInfrastructure;
 using UploadTransaction.Helpers;
 using UploadTransaction.Model;
 
@@ -13,6 +18,13 @@ namespace UploadTransaction.Domain.BusinessLogicLayer.Impl
 {
     public class TransactionBusinessLogic : ITransactionBusinessLogic
     {
+        private TransactionDbContext _dbContext;
+
+        public TransactionBusinessLogic(TransactionDbContext context)
+        {
+            _dbContext = context;
+        }
+
         public async Task<DataResponseModel<TransactionDetailReviewResponse>> UploadPostFileAsync(FileModel reqModel)
         {
             var respDataModel = new TransactionDetailReviewResponse();
@@ -45,71 +57,16 @@ namespace UploadTransaction.Domain.BusinessLogicLayer.Impl
                 #region Extract Data
                 if(readData.RespCode == "000")
                 {
-                    var txnDetailLst = new List<TransactionDetailModel>();
-                    if (Helper.CheckNullorEmptyDatatable(readData.Data))
-                    {
-                        if (readData.Data.AsEnumerable().Any(i => i != null))
-                        {
-                            if (extension == ".csv")
-                            {
-                                txnDetailLst = readData.Data.AsEnumerable()
-                                            .Select((txn, index) => new TransactionDetailModel
-                                            {
-                                                SN = index + 1,
-                                                TransactionID = Convert.ToString(txn["Transaction Identificator"]),
-                                                Amount = Convert.ToString(txn["Amount"]),
-                                                CurrencyCode = Convert.ToString(txn["Currency Code"]),
-                                                TransactionDate = Convert.ToString(txn["Transaction Date"]),
-                                                Status = Convert.ToString(txn["Status"])
-                                            }
-                                            ).ToList();
-                            }
-                            else
-                            {
-                                var column = readData.Data.Columns;
-                                txnDetailLst = readData.Data.AsEnumerable()
-                                            .Select((txn, index) => new TransactionDetailModel
-                                            {
-                                                SN = index + 1,
-                                                TransactionID = Convert.ToString(txn["Transaction_Id"]),
-                                                Amount = Convert.ToString(txn["Amount"]),
-                                                CurrencyCode = Convert.ToString(txn["CurrencyCode"]),
-                                                TransactionDate = Convert.ToString(txn["TransactionDate"]),
-                                                Status = Convert.ToString(txn["Status"])
-                                            }
-                                            ).ToList();
-
-                            }
-                            respDataModel.lstTransactionDetailReview = txnDetailLst;
-                        }
-                        else
-                        {
-                            return new DataResponseModel<TransactionDetailReviewResponse>
-                            {
-                                RespCode = "012",
-                                RespDescription = "Invalid Data",
-                                Data = null
-                            };
-                        }
-                    }
-                    else
-                    {
-                        return new DataResponseModel<TransactionDetailReviewResponse>
-                        {
-                            RespCode = "012",
-                            RespDescription = "No Entry to Show.",
-                            Data = null
-                        };
-                    }
-
+                    respDataModel.lstTransactionDetailReview = readData.Data;
                 }
                 else
                 {
+                    Helper.loggingFile(reqModel.fileName, reqModel.fileContent);
                     return new DataResponseModel<TransactionDetailReviewResponse>
                     {
                         RespCode = "012",
                         RespDescription = readData.RespDescription,
-                        Data = null
+                        Data = respDataModel
                     };
                 }
                 #endregion
@@ -135,29 +92,109 @@ namespace UploadTransaction.Domain.BusinessLogicLayer.Impl
         {
             try
             {
+                MemoryStream stream = new MemoryStream(reqModel.fileContent);
+                var configuration = new CsvHelper.Configuration.CsvConfiguration(CultureInfo.CurrentCulture)
+                {
+                    HasHeaderRecord = true
+                };
+
+                using (var reader = new StreamReader(stream))
+                {
+                    using (var csvReader = new CsvReader(reader, configuration))
+                    {
+                        csvReader.Read();
+                        csvReader.ReadHeader();
+
+                        var headerRow = csvReader.HeaderRecord.ToList();
+                        var IsValid = CheckFileHeaderName(headerRow);
+                        if (!IsValid.isFound)
+                            return new ReadFileData
+                            {
+                                RespCode = "012",
+                                RespDescription = IsValid.remark
+                            };
+
+                        var lstTxnDetail = csvReader.GetRecords<TransactionDetailModel>().ToList();
+                        if (lstTxnDetail.Count == 0)
+                            return new ReadFileData
+                            {
+                                RespCode = "012",
+                                RespDescription = "Only Header Found , Please fill Record."
+                            };
+
+                        foreach (var txn in lstTxnDetail)
+                        {
+                            var validateRes = ValidateFields(txn,"csv");
+                            if (!validateRes.isValid)
+                            {
+                                return new ReadFileData
+                                {
+                                    RespCode = "012",
+                                    RespDescription = validateRes.remark
+                                };
+                            }
+                        }
+                        return new ReadFileData
+                        {
+                            RespCode = "000",
+                            RespDescription = "Success",
+                            Data = lstTxnDetail
+                        };
+                    }
+                }
+
+                //using (StreamReader reader= new StreamReader(stream))
+                //{
+                //    string[] headers = sr.ReadLine().Split(',');
+                //    foreach (string header in headers)
+                //    {
+                //        dt.Columns.Add(header);
+                //    }
+                //    while (!sr.EndOfStream)
+                //    {
+                //        string[] rows = sr.ReadLine().Split(',');
+                //        DataRow dr = dt.NewRow();
+                //        for (int i = 0; i < headers.Length; i++)
+                //        {
+                //            dr[i] = rows[i];
+                //        }
+                //        dt.Rows.Add(dr);
+                //    }
+                //}
+            }
+            catch (Exception ex)
+            {
+                return new ReadFileData
+                {
+                    RespCode = "012",
+                    RespDescription = "Upload File can't read properly [" + ex.Message + "]"
+                };
+            }
+        }
+
+        private static ReadFileData ReadXMLFile(FileModel reqModel)
+        {
+            try
+            {
+                DataSet ds = new DataSet();
                 DataTable dt = new DataTable();
                 MemoryStream stream = new MemoryStream(reqModel.fileContent);
-                using (StreamReader sr = new StreamReader(stream))
+                XmlDocument doc = new XmlDocument();
+                doc.PreserveWhitespace = false;
+                using (var reader = new StreamReader(stream))
                 {
-                    string[] headers = sr.ReadLine().Split(',');
-                    foreach (string header in headers)
-                    {
-                        dt.Columns.Add(header);
-                    }
-                    while (!sr.EndOfStream)
-                    {
-                        string[] rows = sr.ReadLine().Split(',');
-                        DataRow dr = dt.NewRow();
-                        for (int i = 0; i < headers.Length; i++)
-                        {
-                            dr[i] = rows[i];
-                        }
-                        dt.Rows.Add(dr);
-                    }
+                    doc.Load(reader);
+                    ds.ReadXml(new XmlNodeReader(doc));
 
-                    var columnList = headers.ToList();
-                    var IsValid = CheckFileHeaderName(columnList);
+                    dt = ds.Tables[0];
+                    var dtPayment = ds.Tables[1];
 
+                    dt.Merge(dtPayment);
+
+                    var headerColumns = from c in dt.Columns.Cast<DataColumn>()
+                                        select c.ColumnName;
+
+                    var IsValid = CheckFileHeaderNameXML(headerColumns.ToList());
                     if (!IsValid.isFound)
                         return new ReadFileData
                         {
@@ -172,64 +209,37 @@ namespace UploadTransaction.Domain.BusinessLogicLayer.Impl
                             RespDescription = "Only Header Found , Please fill Record."
                         };
 
+                    var lstTxnDetail = dt.AsEnumerable().Select((txn, index) => new TransactionDetailModel
+                                                        {
+                                                            TransactionID = Convert.ToString(txn["id"]),
+                                                            Amount = Convert.ToString(txn["Amount"]),
+                                                            CurrencyCode = Convert.ToString(txn["CurrencyCode"]),
+                                                            TransactionDate = Convert.ToString(txn["TransactionDate"]),
+                                                            Status = Convert.ToString(txn["Status"])
+                                                        }).ToList();
+
+                    foreach (var txn in lstTxnDetail)
+                    {
+                        var validateRes = ValidateFields(txn, "xml");
+                        txn.TransactionDate = Convert.ToDateTime(txn.TransactionDate).ToString("dd/MM/yyyy hh:mm:ss");
+                        if (!validateRes.isValid)
+                        {
+                            return new ReadFileData
+                            {
+                                RespCode = "012",
+                                RespDescription = validateRes.remark
+                            };
+                        }
+                    }
+
+
                     return new ReadFileData
                     {
                         RespCode = "000",
                         RespDescription = "Success",
-                        Data = dt
+                        Data = lstTxnDetail
                     };
-
                 }
-            }
-            catch (Exception)
-            {
-                return new ReadFileData
-                {
-                    RespCode = "012",
-                    RespDescription = "Upload File can't read properly."
-                };
-            }
-        }
-
-        private static ReadFileData ReadXMLFile(FileModel reqModel)
-        {
-            try
-            {
-                DataSet ds = new DataSet();
-                DataTable dt = new DataTable();
-                XmlDocument doc = new XmlDocument();
-                MemoryStream stream = new MemoryStream(reqModel.fileContent);
-                doc.Load(stream);
-                var xmlReader = new XmlNodeReader(doc);
-                ds.ReadXml(xmlReader);
-                dt = ds.Tables[0];
-                var dtPayment = ds.Tables[1];
-                dt.Merge(dtPayment);
-
-                var headerColumns = from c in dt.Columns.Cast<DataColumn>()
-                        select c.ColumnName;
-
-                var IsValid = CheckFileHeaderNameXML(headerColumns.ToList());
-                if (!IsValid.isFound)
-                    return new ReadFileData
-                    {
-                        RespCode = "012",
-                        RespDescription = IsValid.remark
-                    };
-
-                if (dt.Rows.Count == 0)
-                    return new ReadFileData
-                    {
-                        RespCode = "012",
-                        RespDescription = "Only Header Found , Please fill Record."
-                    };
-
-                return new ReadFileData
-                {
-                    RespCode = "000",
-                    RespDescription = "Success",
-                    Data = dt
-                };
             }
             catch (Exception ex)
             {
@@ -301,6 +311,111 @@ namespace UploadTransaction.Domain.BusinessLogicLayer.Impl
 
             }
             return resp;
+        }
+
+        private static validateFieldResponse ValidateFields(TransactionDetailModel txnReview , string fileType)
+        {
+            decimal amount = 0;
+
+            if (txnReview.TransactionID?.Length > 50 )
+            {
+                return new validateFieldResponse(false, "Exceed Maximum length in TransactionID");
+            }
+
+            else if (!decimal.TryParse(txnReview.Amount, out amount))
+            {
+                return new validateFieldResponse(false, "Invalid Amount");
+            }
+
+            else if (!string.IsNullOrEmpty(txnReview.TransactionDate))
+            {
+                var dateFormat = string.Empty;
+                if (fileType == "csv")
+                {
+                    dateFormat = "dd/MM/yyyy hh:mm:ss";
+                }
+                else
+                {
+                    dateFormat = "yyyy-MM-ddTHH:mm:ss";
+                }
+                DateTime tempDate;
+                bool validDate = DateTime.TryParseExact(txnReview.TransactionDate, dateFormat, DateTimeFormatInfo.InvariantInfo, DateTimeStyles.None, out tempDate);
+                if (!validDate)
+                {
+                    return new validateFieldResponse(false, "Invalid Transaction Date");
+                }
+            }
+
+            return new validateFieldResponse(true, string.Empty);
+        }
+        public async Task<ApiResponseModel> SaveTransactionHistoryAsync(SaveTransactionHistoryRequestModel requestModel)
+        {
+            using var transaction = _dbContext.Database.BeginTransaction();
+            try
+            {
+                foreach (var txn in requestModel.lstTransactionDetail)
+                {
+                    var txndetail = new TransactionHistoryTableModel
+                    {
+                        TransactionID = txn.TransactionID,
+                        Currency = txn.CurrencyCode,
+                        TransactionDate =  DateTime.ParseExact(txn.TransactionDate, "dd/MM/yyyy hh:mm:ss", CultureInfo.InvariantCulture),
+                        Amount = decimal.Parse(txn.Amount),
+                        Status = txn.Status == "Approved" ? "A" :
+                                 (txn.Status == "Failed" || txn.Status == "Rejected") ? "R" :
+                                 (txn.Status == "Finished" || txn.Status == "Done") ? "D" :
+                                 txn.Status,
+                        UpdatedDate = DateTime.Now,
+                        CreatedBy = 0
+                    };
+                    await _dbContext.transactionHistory.AddAsync(txndetail);
+                }
+                await _dbContext.SaveChangesAsync();
+                transaction.Commit();
+                return new ApiResponseModel { RespCode = "000", RespDescription = "Success" };
+            }
+            catch (Exception ex)
+            {
+                if (transaction != null) transaction.Rollback();
+                return new ApiResponseModel { RespCode = "012", RespDescription = "Fail to save transaction [" + ex.Message + "]" };
+            }
+            
+        }
+
+        public async Task<DataResponseModel<GetTransacionHistoryByFilterResponseModel>> GetTransactionListByFilterAsync(GetTransacionlistByFilterRequestModel requestModel)
+        {
+            var respDataModel = new GetTransacionHistoryByFilterResponseModel();
+            var transctionHistory = await _dbContext.transactionHistory
+                                           .Where(x => x.TransactionDate >= requestModel.StartDate && x.TransactionDate <= requestModel.EndDate
+                                           && (String.IsNullOrEmpty(requestModel.Status) || x.Status == requestModel.Status)
+                                           && (String.IsNullOrEmpty(requestModel.Currency) || x.Currency == requestModel.Currency))
+                                           .Select(x => new TransacionHistoryModel
+                                           {
+                                               id = x.TransactionID,
+                                               payment = x.Amount.ToString("0.00") + " " + x.Currency.ToString(),
+                                               Status = x.Status
+                                           }).ToListAsync();
+
+            if (transctionHistory.Count > 0)
+            {
+                respDataModel.lstTransactionHistory = transctionHistory;
+                return new DataResponseModel<GetTransacionHistoryByFilterResponseModel>
+                {
+                    RespCode = "000",
+                    RespDescription = "Success",
+                    Data = respDataModel
+                };
+            }
+            else
+            {
+                return new DataResponseModel<GetTransacionHistoryByFilterResponseModel>
+                {
+                    RespCode = "012",
+                    RespDescription = "No Record To Show",
+                    Data = null
+                };
+            }
+
         }
     }
 }

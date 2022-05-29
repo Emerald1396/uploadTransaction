@@ -17,13 +17,11 @@ namespace UploadTransaction.Helpers
             model.RespCode = RespCode;
             model.RespDescription = RespDesc;
 
-            var response = new StringContent(JsonConvert.SerializeObject(model));
-
             if (RespCode != "000")
             {
-                return BadRequest(response);
+                return BadRequest(model);
             }
-            return Ok(response);
+            return Ok(model);
         }
 
         public async Task<IActionResult> TransactionApiResponse<T>(DataResponseModel<T> responseModel)
@@ -41,9 +39,7 @@ namespace UploadTransaction.Helpers
             model.RespCode = "012";
             model.RespDescription = ex.Message;
 
-            var response = new StringContent(JsonConvert.SerializeObject(model));
-
-            return BadRequest(response);
+            return BadRequest(model);
         }
     }
 }

@@ -13,6 +13,8 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using UploadTransaction.Domain.BusinessLogicLayer;
 using UploadTransaction.Domain.BusinessLogicLayer.Impl;
+using UploadTransaction.Domain.DataInfrastructure;
+using static UploadTransaction.Helpers.Helper;
 
 namespace UploadTransaction
 {
@@ -28,10 +30,13 @@ namespace UploadTransaction
         // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services)
         {
-           // services.AddDbContext<invoiceDbContext>(options => options.UseMySQL(Configuration.GetConnectionString("Default")));
+            services.AddDbContext<TransactionDbContext>(options => options.UseMySQL(Configuration.GetConnectionString("Default")));
             services.AddControllers();
             services.AddCors();
-            services.AddSwaggerGen();
+            services.AddSwaggerGen(options =>
+            {
+                options.OperationFilter<FileUploadFilter>();
+            });
             services.AddScoped<ITransactionBusinessLogic, TransactionBusinessLogic>();
         }
 
@@ -43,7 +48,7 @@ namespace UploadTransaction
                 app.UseDeveloperExceptionPage();
             }
 
-            // Enable middle ware to serve swagger-ui (HTML, JS, CSS, etc.)
+            // Enable middleware to serve swagger-ui (HTML, JS, CSS, etc.)
             app.UseSwagger();
 
             app.UseSwaggerUI();
@@ -56,9 +61,9 @@ namespace UploadTransaction
 
             app.UseHttpsRedirection();
 
-            app.UseRouting();
-
             app.UseCors(x => x.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
+
+            app.UseRouting();
 
             app.UseAuthorization();
 
