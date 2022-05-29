@@ -33,6 +33,12 @@ namespace UploadTransaction.Controllers
                 var fileInfo = new FileModel();
                 IFormFile postFile = Request.Form.Files.FirstOrDefault();
                 string extension = Path.GetExtension(postFile.FileName).ToLower();
+                if (extension.ToLower() == ".csv" || extension.ToLower() == ".xml")
+                { }
+                else
+                {
+                    return await _txnUtility.TransactionApiResponse("012", "Unknown format");
+                }
 
                 if (postFile != null && postFile.Length > 0)
                 {
@@ -44,16 +50,20 @@ namespace UploadTransaction.Controllers
                         postFile.OpenReadStream().CopyTo(stream);
                         fileInfo.fileContent = stream.ToArray();
                     }
+                    var returnData = await _businessLayer.UploadPostFileAsync(fileInfo);
+                    return await _txnUtility.TransactionApiResponse(returnData);
+                }
+                else
+                {
+                    return await _txnUtility.TransactionApiResponse("012", "Invalid File.");
                 }
 
-                return Ok(fileInfo);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                return BadRequest();
+                return await _txnUtility.TransactionApiResponse(ex);
             }
         }
-
 
         [HttpPost]
         [Route("UploadValidFile")]
